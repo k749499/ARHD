@@ -1,0 +1,256 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using HoloToolkit.Unity.InputModule;
+using UnityEngine.UI;
+using System;
+
+public class Drawing : MonoBehaviour, ISpeechHandler
+{
+    //マテリアルの定義
+    static Material lineMaterial;
+
+    //変数の定義
+    private float width = 0.0f;　//線の太さに使用（デフォルトでは1.0 [pixle]）
+    private float r = 0.0f;
+    private float g = 0.0f;
+    private float b = 1.0f;　//線の色に使用(デフォルトでは青)
+
+    //線の座標リスト
+    private List<Vector3> linePoints = new List<Vector3>();
+   
+    //描画の開始終了のトリガー
+    private static bool Dtrigger;
+
+    //ローパスフィルタに仕様
+    private Vector3 LawPassPoint0;
+    private Vector3 LawPassPoint1;
+    private Vector3 LawPassPoint2;
+
+    //ゼロベクトルを作成
+    private Vector3 nun = Vector3.zero;    
+
+    //描画用のマテリアルを作成
+    static void CreateLineMaterial()
+    {
+        if (!lineMaterial)
+        {
+            // Unity has a built-in shader that is useful for drawing simple colored things.
+            // Unityにはシンプルな色のものを描くのに便利なシェーダが内蔵されています。
+            Shader shader = Shader.Find("Hidden/Internal-Colored");
+
+            /*
+            Shader shader = Shader.Find ("Custom/Texture");
+            */
+        
+            lineMaterial = new Material(shader);
+            lineMaterial.hideFlags = HideFlags.HideAndDontSave;
+
+            // Turn on alpha blending
+            // アルファブレンディングをオンにする
+            lineMaterial.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            lineMaterial.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+
+            // Turn backface culling off
+            // バックフェイスのカリングをオフにする
+            lineMaterial.SetInt("_Cull", (int)UnityEngine.Rendering.CullMode.Off);
+
+            // Turn off depth writes
+            // 深さの書き込みをオフにする
+            lineMaterial.SetInt("_ZWrite", 0);
+        }
+    }
+
+    //描画開始の場合true
+    public void OnStart()
+    {
+        Dtrigger = true;
+    }
+
+    //描画の終了の場合false
+    public void OnStop()
+    {
+        Dtrigger = false;
+
+        //リストに空箱を追加
+        linePoints.Add(nun);
+    }
+
+    //描画した線の消去
+    public void OnClear()
+    {
+        linePoints.Clear();
+    }
+
+    //描画した線の色の変更
+    public void OnChangeYellow()
+    {
+        r = 1.0f;
+        g = 1.0f;
+        b = 0.0f;
+    }
+
+    public void OnChangeBlue()
+    {
+        r = 0.0f;
+        g = 0.0f;
+        b = 1.0f;
+    }
+
+    public void OnChangeGreen()
+    {
+        r = 0.0f;
+        g = 1.0f;
+        b = 0.0f;
+    }
+
+    public void OnChangeRed()
+    {
+        r = 1.0f;
+        g = 0.0f;
+        b = 0.0f;
+    }
+
+    public void OnChangeMagenta()
+    {
+        r = 1.0f;
+        g = 0.0f;
+        b = 1.0f;
+    }
+
+    public void OnChangeCyan()
+    {
+        r = 0.0f;
+        g = 1.0f;
+        b = 1.0f;
+    }
+
+    public void OnChangeWhite()
+    {
+        r = 1.0f;
+        g = 1.0f;
+        b = 1.0f;
+    }
+
+    public void OnChangeBlack()
+    {
+        r = 0.0f;
+        g = 0.0f;
+        b = 0.0f;
+    }
+
+    //線を太くする
+    public void OnThick()
+    {
+        width = width + 0.001f;
+    }
+
+    //線を細くする
+    public void OnThin()
+    {
+        width = width - 0.001f;
+
+        //線の太さが0にならないようにする
+        if (width <= -0.001)
+        {
+            width = -0.001f;
+        }
+    }
+
+    //描画の設定
+    public void OnRenderObject()
+    {
+        CreateLineMaterial();
+        // Apply the line material
+        // ラインマテリアルを適用する
+        lineMaterial.SetPass(0);
+
+        //現在のリストに対して行列を追加します。現在の行列がコピーされます。
+        GL.PushMatrix();
+
+        // Set transformation matrix for drawing to match our transform
+        // 描画用の変換行列を設定して、我々の変換と一致するようにします。
+        GL.MultMatrix(transform.localToWorldMatrix);
+
+        //線の太さを指定
+        float lineWidth = 0.002f + width;
+
+        // Draw lines
+        GL.Begin(GL.QUADS);
+
+        // 線の色を指定
+        GL.Color(new Color(r, g, b));
+
+        // Gazeの衝突点座標
+        Vector3 HitPosition = GazeManager.Instance.HitPosition;
+
+        //座標リストが空の場合はGaze座標を追加する
+        if (linePoints.Count == 0)
+        {
+            linePoints.Add(HitPosition);
+        }
+
+        // "Go"の音声入力を認識した場合もGaze座標を追加する
+        if (Dtrigger)
+        {
+            linePoints.Add(HitPosition);
+        }
+
+        //リストに２点以上座標が存在するとき、線を描画する
+        if (linePoints.Count >= 3)
+        {           
+            //リストにある座標で線を描画する
+            for (int i = 3; i < linePoints.Count; i++)
+            {
+                //リストが空の場合描画を行わない
+                if (linePoints[i] == nun || linePoints[i - 1] == nun) 
+                {
+                    goto Exit;
+                }
+
+                //リストにある2点の座標を基にオブジェクトを配置
+                //3点の移動平均フィルタを掛ける                
+                if (i % 3 == 0)
+                {
+                    //xとyの入れ替えにより，法線ベクトルを示す
+                    //DrawLine2D(linePoints[i], linePoints[i - 1], lineWidth);
+                    LawPassPoint0 = ((new Vector3(linePoints[i].y, linePoints[i - 1].x, linePoints[i].z)) - (new Vector3(linePoints[i - 1].y, linePoints[i].x, linePoints[i - 1].z))).normalized * lineWidth;
+                }
+
+                if (i % 3 == 1)
+                {
+                    //xとyの入れ替えにより，法線ベクトルを示す
+                    //DrawLine2D(linePoints[i], linePoints[i - 1], lineWidth);
+                    LawPassPoint1 = ((new Vector3(linePoints[i].y, linePoints[i - 1].x, linePoints[i].z)) - (new Vector3(linePoints[i - 1].y, linePoints[i].x, linePoints[i - 1].z))).normalized * lineWidth;
+                }
+
+                if (i % 3 == 2)
+                {
+                    //xとyの入れ替えにより，法線ベクトルを示す
+                    //DrawLine2D(linePoints[i], linePoints[i - 1], lineWidth);
+                    LawPassPoint2 = ((new Vector3(linePoints[i].y, linePoints[i - 1].x, linePoints[i].z)) - (new Vector3(linePoints[i - 1].y, linePoints[i].x, linePoints[i - 1].z))).normalized * lineWidth;
+
+                    Vector3 LawPassPoint = (LawPassPoint0 + LawPassPoint1 + LawPassPoint2) / 3.0f;
+
+                    //変数"LawPassPoint"を基に四点を配置し，その頂点を取る四角形を配置する
+                    GL.Vertex3(linePoints[i - 2].x - LawPassPoint.x, linePoints[i - 2].y - LawPassPoint.y, linePoints[i - 2].z);
+                    GL.Vertex3(linePoints[i - 2].x + LawPassPoint.x, linePoints[i - 2].y + LawPassPoint.y, linePoints[i - 2].z);
+                    GL.Vertex3(linePoints[i].x + LawPassPoint.x, linePoints[i].y + LawPassPoint.y, linePoints[i].z);
+                    GL.Vertex3(linePoints[i].x - LawPassPoint.x, linePoints[i].y - LawPassPoint.y, linePoints[i].z);
+                }
+
+            Exit:;
+            }
+        }
+
+        GL.End();
+                
+        //リストの最上段を取り除く
+        GL.PopMatrix();        
+    }
+
+    public void OnSpeechKeywordRecognized(SpeechEventData eventData)
+    {
+        throw new NotImplementedException();
+    }
+}
